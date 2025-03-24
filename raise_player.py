@@ -5,6 +5,9 @@ import pprint
 class RaisedPlayer(BasePokerPlayer):
 
   def declare_action(self, valid_actions, hole_card, round_state):
+    pp = pprint.PrettyPrinter(indent=2)
+    print("------------ROUND_STATE(RANDOM)--------")
+    pp.pprint(round_state)
     for i in valid_actions:
         if i["action"] == "raise":
             action = i["action"]

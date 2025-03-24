@@ -1,5 +1,6 @@
 from pypokerengine.engine.action_checker import ActionChecker
 from pypokerengine.engine.card import Card
+from pypokerengine.engine.game_evaluator import GameEvaluator
 from pypokerengine.engine.round_manager import RoundManager
 from pypokerengine.players import BasePokerPlayer
 import random as rand
@@ -7,14 +8,19 @@ from pypokerengine.engine.poker_constants import PokerConstants as Const
 import pprint
 
 from pypokerengine.utils.card_utils import estimate_hole_card_win_rate
+from pypokerengine.utils.game_state_utils import deepcopy_game_state
 
 class CustomPlayer(BasePokerPlayer):
+  def __init__(self):
+    self.is_first_player = None
+    self.player_pos = None
+
 
   def declare_action(self, valid_actions, hole_card, round_state):
     # valid_actions format => [raise_action_pp = pprint.PrettyPrinter(indent=2)
-    # pp = pprint.PrettyPrinter(indent=2)
-    # print("------------ROUND_STATE(RANDOM)--------")
-    # pp.pprint(round_state)
+    pp = pprint.PrettyPrinter(indent=2)
+    print("------------ROUND_STATE(RANDOM)--------")
+    pp.pprint(round_state)
     # print("------------HOLE_CARD----------")
     # pp.pprint(hole_card)
     # print("------------VALID_ACTIONS----------")
@@ -23,14 +29,19 @@ class CustomPlayer(BasePokerPlayer):
     # print("------------VALID_ACTIONS----------")
     # estimate_hole_card_win_rate_timed(1000, 2, hole_card, round_state["community_card"])
     # print("------------VALID_ACTIONS----------")
+
+    if self.is_first_player == None:
+      self.is_first_player = round_state["next_player"] == 0
+      self.player_pos = round_state["next_player"]
     
     game_state_copy = deepcopy_game_state(round_state)
-    _, action = tree_search(hole_card, round_state, 3, is_maximizing_player=True)
+    _, action = tree_search(hole_card, round_state, 3, self.is_first_player)
+
+    # action = rand.choice(valid_actions)  # Choose a random action from valid actions
 
     return action  # action returned here is sent to the poker engine
 
 
-  
   def receive_game_start_message(self, game_info):
     pass
 
@@ -45,6 +56,25 @@ class CustomPlayer(BasePokerPlayer):
 
   def receive_round_result_message(self, winners, hand_info, round_state):
     pass
+
+  def tree_search(self, hole_card, round_state, depth, is_maximizing_player=True):
+    # Base case for when depth stops at terminal nodes
+    if is_last_round(round_state, round_state["game_rule"]):
+      winners, _, prize_map = GameEvaluator.judge(round_state["table"])
+      if len(winners) == 2:
+        return 0 # since they are splitting the pot 
+
+      if prize_map[self.player_pos] == 0:
+        pot_size = round_state["pot"]["main"]["amount"]
+        return -1 * pot_size if self.is_first_player else pot_size # -1 if we ae the maximizing player 1 otherwise
+      else:
+        pot_size = round_state["pot"]["main"]["amount"]
+        return -1 * pot_size if self.is_first_player else pot_size # -1 if we ae the maximizing player 1 otherwise
+      
+    # Base case for when depth stops at intermediary nodes
+    if depth == 0 or round_state["street"] == Const.Street.FINISHED:
+      sign = -1 if is_maximizing_player else 1 # reverse since the player is before is the one to choose
+      return sign * estimate_hole_card_win_rate_timed(30, 2, hole_card, round_state["community_card"])
 
 def setup_ai():
   return CustomPlayer()
@@ -116,13 +146,22 @@ def is_last_round(game_state, game_rule):
 
 @debug_timer
 def tree_search(hole_card, round_state, depth, is_maximizing_player=True):
+  # Base case for when depth stops at terminal nodes
   if is_last_round(round_state, round_state["game_rule"]):
-    sign = -1 if is_maximizing_player else 1 # reverse since the player is before is the one to choose
-    winners, _, _ = GameEvaluator.judge(round_state["table"])
     
-  # Base case for recursion
+    winners, _, prize_map = GameEvaluator.judge(round_state["table"])
+    if len(winners) == 2:
+      return 0 # since they are splitting the pot 
+    
+  #  if prize_map[]
+
+    sign = -1 if is_maximizing_player else 1 # reverse since the player is before is the one to choose
+    return sign * (1 if winners[0]["uuid"] == round_state["next_player"] else -1)
+    
+  # Base case for when depth stops at intermediary nodes
   if depth == 0 or round_state["street"] == Const.Street.FINISHED:
-    return estimate_hole_card_win_rate_timed(30, 2, hole_card, round_state["community_card"])
+    sign = -1 if is_maximizing_player else 1 # reverse since the player is before is the one to choose
+    return sign * estimate_hole_card_win_rate_timed(30, 2, hole_card, round_state["community_card"])
 
 
 
